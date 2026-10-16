@@ -1,0 +1,24 @@
+{
+  "profiles": [
+    "Pessoal"
+  ],
+  "settings": {
+    "notify": true,
+    "panel_show_stopped": true,
+    "notify_seconds": 20,
+    "auto_trust": false
+  },
+  "projects": [
+    {
+      "id": "exemplo1",
+      "name": "meu-projeto",
+      "path": "~/projetos/meu-projeto",
+      "session_id": "",
+      "mode": "continue",
+      "flags": "",
+      "profile": "Pessoal",
+      "workspace": 1,
+      "enabled": true
+    }
+  ]
+}

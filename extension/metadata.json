@@ -1,0 +1,7 @@
+{
+  "uuid": "claude-workspace-bridge@local",
+  "name": "Claude Workspace Bridge",
+  "description": "Local D-Bus bridge (org.claudews.Bridge) so Claude Workspace Manager can list windows and move them between workspaces.",
+  "shell-version": ["46", "47", "48"],
+  "version": 2
+}

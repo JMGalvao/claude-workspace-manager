@@ -1,0 +1,444 @@
+<!doctype html>
+<html lang="pt">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Claude Workspace</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%235b3df5'/><path d='M9 16l5 5 9-10' stroke='white' stroke-width='3' fill='none' stroke-linecap='round'/></svg>">
+<style>
+:root{
+  --bg:#faf6ef; --card:#ffffff; --ink:#1d1a2b; --muted:#6f6a80; --line:#e8e1d3; --col:#f3eee3;
+  --accent:#5b3df5; --accent-soft:#ece8ff; --coral:#ff5a36; --coral-soft:#ffe9e3;
+  --ok:#12a150; --ok-soft:#dff6e8; --radius:16px;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 "Inter",system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1400px;margin:0 auto;padding:26px 20px 80px}
+header{display:flex;flex-wrap:wrap;gap:16px;align-items:center;justify-content:space-between;margin-bottom:20px}
+h1{font-size:26px;margin:0;letter-spacing:-.02em}
+h1 span{color:var(--accent)}
+.sub{color:var(--muted);font-size:14px;margin-top:2px}
+.row{display:flex;gap:10px;flex-wrap:wrap;align-items:center}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:var(--card);color:var(--ink);padding:8px 14px;border-radius:10px;transition:transform .08s,background .15s,box-shadow .15s}
+button:hover{box-shadow:0 2px 10px rgba(29,26,43,.08)}
+button:active{transform:scale(.97)}
+button:disabled{opacity:.5;cursor:not-allowed}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+button.primary:hover{background:#4a2fe0}
+button.hero{padding:12px 22px;font-size:16px;border-radius:14px;box-shadow:0 6px 20px rgba(91,61,245,.3)}
+button.danger{color:var(--coral);border-color:#ffd0c6}
+button.danger:hover{background:var(--coral-soft)}
+button.ghost{background:transparent}
+button.sm{padding:6px 11px;font-size:13px}
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:16px;align-items:center}
+.tab{padding:6px 13px;border-radius:999px;border:1px solid var(--line);background:transparent;color:var(--muted);font-weight:500}
+.tab.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.tab .n{opacity:.6;margin-left:6px;font-size:12px}
+.banner{background:var(--coral-soft);color:#a8330f;border-radius:12px;padding:10px 14px;font-size:13.5px;margin-bottom:14px}
+.banner.info{background:var(--accent-soft);color:#3a24b8}
+.prog{height:8px;background:var(--line);border-radius:99px;overflow:hidden;margin-bottom:6px}
+.prog>div{height:100%;background:linear-gradient(90deg,var(--accent),var(--coral));transition:width .3s}
+.progtxt{font-size:13px;color:var(--muted);margin-bottom:16px}
+.board{display:flex;gap:14px;overflow-x:auto;padding-bottom:12px;align-items:flex-start}
+.colw{flex:0 0 310px;background:var(--col);border-radius:20px;padding:12px;display:flex;flex-direction:column;gap:10px;min-height:140px;border:2px solid transparent;transition:border-color .15s,background .15s}
+.colw.over{border-color:var(--accent);background:var(--accent-soft)}
+.colw.new{background:transparent;border:2px dashed var(--line);color:var(--muted);align-items:center;justify-content:center;text-align:center;min-height:140px}
+.colh{display:flex;justify-content:space-between;align-items:center;padding:2px 4px}
+.colh{cursor:grab}
+.grip{color:var(--muted);margin-right:6px;opacity:.7}
+.colw.drag{opacity:.45}
+.colh b{font-size:15px;letter-spacing:-.01em}
+.colh .cnt{color:var(--muted);font-size:12.5px;font-weight:500;margin-left:6px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px;display:flex;flex-direction:column;gap:10px;cursor:grab;transition:box-shadow .2s}
+.card:hover{box-shadow:0 8px 24px rgba(29,26,43,.09)}
+.card.run{border-color:#a9e3c3;box-shadow:0 0 0 3px var(--ok-soft)}
+.card.off{opacity:.62;background:#f7f3ea}
+.card.drag{opacity:.35}
+.top{display:flex;justify-content:space-between;gap:8px;align-items:flex-start}
+.name{font-weight:650;font-size:15.5px;letter-spacing:-.01em;word-break:break-word}
+.path{color:var(--muted);font-size:12px;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;word-break:break-all}
+.pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap}
+.pill i{width:7px;height:7px;border-radius:50%;background:currentColor}
+.pill.run{background:var(--ok-soft);color:var(--ok)}
+.pill.run i{animation:pulse 1.6s infinite}
+.pill.stop{background:#f0ece3;color:var(--muted)}
+.pill.busy{background:var(--accent-soft);color:var(--accent)}
+.pill.busy i{animation:pulse .9s infinite}
+.sel{width:17px;height:17px;accent-color:var(--accent);margin:2px 8px 0 0;cursor:pointer;flex:none}
+.card.picked{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}
+.titlewrap{display:flex;align-items:flex-start;min-width:0}
+#selbar{position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(30px);opacity:0;pointer-events:none;background:var(--ink);color:#fff;border-radius:16px;padding:10px 12px 10px 18px;display:flex;gap:10px;align-items:center;flex-wrap:wrap;box-shadow:0 14px 40px rgba(29,26,43,.35);transition:.2s;z-index:40;max-width:94vw}
+#selbar.on{opacity:1;transform:translateX(-50%);pointer-events:auto}
+#selbar select{padding:7px 10px;border-radius:9px;border:0;background:#fff}
+#selbar button{border:0}
+#selbar .ghost{background:transparent;color:#d9d4ec}
+.tog{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none;margin-left:auto}
+.tog input{accent-color:var(--accent);width:auto;margin:0}
+.pill.miss{background:var(--coral-soft);color:var(--coral)}
+@keyframes pulse{50%{opacity:.3}}
+.meta{display:flex;gap:6px;flex-wrap:wrap}
+.tag{font-size:11.5px;background:var(--accent-soft);color:var(--accent);padding:2px 8px;border-radius:7px;font-weight:600}
+.tag.g{background:#f0ece3;color:var(--muted)}
+.actions{display:flex;gap:6px;flex-wrap:wrap}
+.actions .grow{flex:1}
+.toast{position:fixed;bottom:22px;left:50%;transform:translateX(-50%) translateY(20px);background:var(--ink);color:#fff;padding:10px 18px;border-radius:12px;opacity:0;transition:.25s;pointer-events:none;z-index:50}
+.toast.show{opacity:1;transform:translateX(-50%)}
+.toast.err{background:var(--coral)}
+dialog{border:none;border-radius:20px;padding:0;width:min(560px,92vw);box-shadow:0 30px 80px rgba(29,26,43,.3);color:var(--ink);background:var(--card)}
+dialog::backdrop{background:rgba(29,26,43,.35);backdrop-filter:blur(3px)}
+.dlg{padding:24px;display:flex;flex-direction:column;gap:14px}
+.dlg h2{margin:0;font-size:20px}
+label{display:flex;flex-direction:column;gap:5px;font-size:13px;font-weight:600;color:var(--muted)}
+input,select{font:inherit;padding:10px 12px;border:1px solid var(--line);border-radius:10px;background:#fff;color:var(--ink)}
+input:focus,select:focus{outline:2px solid var(--accent);border-color:transparent}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.three{display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px}
+.disc{max-height:160px;overflow:auto;border:1px solid var(--line);border-radius:12px}
+.disc button{display:block;width:100%;text-align:left;border:0;border-bottom:1px solid var(--line);border-radius:0;padding:9px 12px;background:#fff}
+.disc button:last-child{border-bottom:0}
+.disc button:hover{background:var(--accent-soft)}
+.disc small{display:block;color:var(--muted);font-family:ui-monospace,monospace;font-size:11.5px}
+.hint{font-size:12.5px;color:var(--muted)}
+.switch{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);cursor:pointer;user-select:none;flex-direction:row}
+.switch input{width:auto;accent-color:var(--accent)}
+@media(max-width:560px){.two,.three{grid-template-columns:1fr}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <div>
+      <h1>Claude <span>Workspace</span></h1>
+      <div class="sub" id="sub">A carregar...</div>
+    </div>
+    <div class="row">
+      <label class="switch" title="Notificação do GNOME quando uma sessão que estava a trabalhar fica livre"><input type="checkbox" id="notify"> Notificar quando terminar</label>
+      <label class="switch" title="Mostrar também as sessões que não estão a correr"><input type="checkbox" id="showStopped"> Mostrar paradas</label>
+      <label class="switch" title="Restaura o layout quando entras no PC"><input type="checkbox" id="auto"> Restaurar no login</label>
+      <button id="updAll" class="primary" style="display:none;background:var(--coral);border-color:var(--coral)"></button>
+      <button id="capture" title="Lê onde estão as janelas agora e guarda isso como o layout">Guardar layout atual</button>
+      <button id="stopAll" class="danger">Parar tudo</button>
+      <button id="add">+ Projeto</button>
+      <button id="restore" class="primary hero">Restaurar workspace</button>
+    </div>
+  </header>
+
+  <div id="banner"></div>
+  <div id="progress"></div>
+  <div class="tabs" id="tabs"></div>
+  <div class="board" id="board"></div>
+</div>
+
+<dialog id="dlg">
+  <form method="dialog" class="dlg" id="form">
+    <h2 id="dlgTitle">Novo projeto</h2>
+    <div id="discBox">
+      <div class="hint" style="margin-bottom:6px">Projetos que já usaste com o Claude Code (clica para preencher):</div>
+      <div class="disc" id="disc"></div>
+    </div>
+    <div class="three">
+      <label>Nome<input id="fName" required placeholder="ex.: kodinx-website"></label>
+      <label>Perfil<select id="fProfile"></select></label>
+      <label>Workspace<input id="fWs" type="number" min="1" max="20" value="1"></label>
+    </div>
+    <label>Pasta<input id="fPath" required placeholder="~/projetos/meu-projeto"></label>
+    <label>ID da sessão (opcional, retoma exatamente essa conversa)<input id="fSid" placeholder="vazio = continuar a última da pasta"></label>
+    <div class="two">
+      <label>Ao abrir
+        <select id="fMode">
+          <option value="continue">Continuar última conversa</option>
+          <option value="resume">Escolher conversa (resume)</option>
+          <option value="new">Conversa nova</option>
+        </select>
+      </label>
+      <label>Flags extra (opcional)<input id="fFlags" placeholder="--model opus"></label>
+    </div>
+    <label class="switch"><input type="checkbox" id="fEnabled" checked> Incluir em "Restaurar workspace"</label>
+    <div class="row" style="justify-content:flex-end">
+      <button type="button" id="cancel" class="ghost">Cancelar</button>
+      <button type="submit" class="primary">Guardar</button>
+    </div>
+  </form>
+</dialog>
+<div id="selbar">
+  <b id="selcount"></b>
+  <span style="opacity:.7">Mover para</span>
+  <select id="selTarget"></select>
+  <button class="primary" id="selMove">Mover</button>
+  <button class="ghost" id="selAll">Selecionar visíveis</button>
+  <button class="ghost" id="selClear">Limpar</button>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+let S = {profiles:[], projects:[], restore:{}}, active = localStorage.getItem('ws_profile') || '__all', editing = null, dragId = null;
+
+async function api(path, body){
+  const r = await fetch(path, body===undefined ? {} : {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(body)});
+  const j = await r.json().catch(()=>({}));
+  if(!r.ok) throw new Error(j.error || r.statusText);
+  return j;
+}
+function toast(msg, err){
+  const t = $('#toast'); t.textContent = msg; t.className = 'toast show' + (err?' err':'');
+  clearTimeout(toast.t); toast.t = setTimeout(()=>t.className='toast', 2800);
+}
+const act = (p, b, ok) => api(p, b).then(r => { toast(ok || r.message || 'Feito'); refresh(); }).catch(e => toast(e.message, true));
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const MODE = {continue:'Continuar', resume:'Escolher', new:'Nova'};
+
+async function refresh(){
+  try{ S = await api('/api/state'); if(!dragId && dragCol===null) render(); }
+  catch(e){ $('#sub').textContent = 'Sem ligação ao servidor'; }
+}
+let showStopped = (() => { try{ return localStorage.getItem('ws_show_stopped') !== '0'; }catch{ return true; } })();
+const inView = p => active==='__all' || p.profile===active;
+const shown = p => inView(p) && (showStopped || p.running);
+const selected = new Set();
+let dragIds = [], dragCol = null;
+function colOrder(){ return [...new Set(S.projects.map(p=>p.workspace))].sort((a,b)=>a-b); }
+function reorderCols(from, targetN){
+  const arr = colOrder(); const fi = arr.indexOf(from); if(fi<0) return;
+  let ti = arr.indexOf(targetN); if(ti<0) ti = arr.length - 1;   // dropped on the "new" column: send to the end
+  if(fi===ti) return;
+  arr.splice(fi,1); arr.splice(ti,0,from);
+  act('/api/ws-order', {order:arr}, 'Workspaces reordenados');
+}
+function toggleSel(id){ selected.has(id) ? selected.delete(id) : selected.add(id); render(); }
+
+function render(){
+  if(active!=='__all' && !S.profiles.includes(active)) active='__all';
+  const run = S.projects.filter(p=>p.running).length;
+  const wsCount = new Set(S.projects.map(p=>p.workspace)).size;
+  const old = S.projects.filter(p=>p.outdated && inView(p)).length;
+  $('#sub').textContent = `${run} a correr de ${S.projects.length} sessões · ${wsCount} workspace${wsCount===1?'':'s'}` + (S.latest ? ` · Claude Code ${S.latest}` : '');
+  const ub = $('#updAll'); ub.style.display = old ? '' : 'none';
+  ub.textContent = `Reiniciar desatualizadas (${old})`; ub.disabled = !!(S.restore||{}).running;
+  $('#auto').checked = S.autostart;
+  $('#showStopped').checked = showStopped;
+  $('#notify').checked = !!(S.settings && S.settings.notify);
+
+  let b = '';
+  if((S.untracked||[]).length) b += `<div class="banner info"><b>${S.untracked.length} sessão(ões) ativa(s) fora do workspace:</b> ${S.untracked.map(u=>esc(u.name)).join(', ')} <button class="sm primary" id="importLive" style="margin-left:8px">Importar</button></div>`;
+  if(!S.bridge && S.bridge_expected !== false) b += '<div class="banner"><b>Falta ativar a extensão de workspaces (1 vez):</b> termina sessão e volta a entrar no PC. Até lá os terminais abrem todos no workspace atual.</div>';
+  $('#banner').innerHTML = b;
+
+  const r = S.restore || {};
+  $('#restore').disabled = !!r.running;
+  $('#restore').textContent = r.running ? 'A restaurar...' : 'Restaurar workspace';
+  $('#progress').innerHTML = r.running ?
+    `<div class="prog"><div style="width:${r.total?Math.round(100*r.done/r.total):0}%"></div></div><div class="progtxt">${r.done}/${r.total} · a abrir ${esc(r.current||'')}</div>` : '';
+
+  const counts = {}; S.projects.forEach(p => counts[p.profile] = (counts[p.profile]||0)+1);
+  $('#tabs').innerHTML =
+    `<button class="tab ${active==='__all'?'on':''}" data-p="__all">Todos<span class="n">${S.projects.length}</span></button>` +
+    S.profiles.map(n => `<button class="tab ${active===n?'on':''}" data-p="${esc(n)}">${esc(n)}<span class="n">${counts[n]||0}</span></button>`).join('') +
+    `<button class="tab" id="newProf" title="Novo perfil">+</button>` +
+    (active!=='__all' ? `<button class="tab" id="delProf">apagar perfil</button>` : '');
+
+  const nums = [...new Set(S.projects.map(p=>p.workspace))].sort((a,b)=>a-b);
+  const next = (nums[nums.length-1]||0) + 1;
+  const col = n => {
+    const ps = S.projects.filter(p => p.workspace===n && shown(p));
+    const hid = S.projects.filter(p => p.workspace===n && inView(p) && !shown(p)).length;
+    const idx = nums.indexOf(n) + 1;
+    return `<div class="colw" data-ws="${n}">
+      <div class="colh" draggable="true" title="Arrasta para reordenar o workspace">
+        <div><span class="grip">⠿</span><b>Workspace ${idx}</b><span class="cnt">${ps.length}${hid?` · ${hid} ocultas`:''}</span></div>
+        <div class="row" style="gap:6px"><button class="sm ghost" data-colmove="${n}" data-dir="-1" title="Mover para a esquerda" ${idx===1?'disabled':''}>←</button><button class="sm ghost" data-colmove="${n}" data-dir="1" title="Mover para a direita" ${idx===nums.length?'disabled':''}>→</button><button class="sm ghost" data-selcol="${n}" title="Selecionar todas as sessões desta coluna">Selecionar</button>
+        <button class="sm" data-open="${n}" title="Abrir só este workspace">Abrir</button></div></div>
+      ${ps.map(card).join('')}
+    </div>`;
+  };
+  const bd = $('#board'), keep = bd.scrollLeft;
+  bd.innerHTML = (nums.length ? nums.map(col).join('') : '') +
+    `<div class="colw new" data-ws="${next}"><div>Arrasta um cartão para aqui<br>para criar um novo workspace</div></div>`;
+  bd.scrollLeft = keep;
+  renderSelbar(nums, next);
+}
+
+function renderSelbar(nums, next){
+  for(const id of [...selected]) if(!S.projects.some(p=>p.id===id)) selected.delete(id);
+  const bar = $('#selbar'), sel = $('#selTarget'), prev = sel.value;
+  bar.classList.toggle('on', selected.size > 0);
+  $('#selcount').textContent = `${selected.size} selecionada${selected.size===1?'':'s'}`;
+  sel.innerHTML = nums.map((n,i)=>`<option value="${n}">Workspace ${i+1}</option>`).join('') +
+                  `<option value="${next}">Novo workspace</option>`;
+  if([...sel.options].some(o=>o.value===prev)) sel.value = prev;
+}
+
+function card(p){
+  const st = !p.exists ? ['miss','Pasta em falta'] : p.running ? (p.busy ? ['busy','A trabalhar'] : ['run','Ativa']) : ['stop','Parado'];
+  return `<div class="card ${p.running?'run':''} ${p.enabled?'':'off'} ${selected.has(p.id)?'picked':''}" draggable="true" data-id="${p.id}">
+    <div class="top">
+      <div class="titlewrap"><input type="checkbox" class="sel" data-sel="${p.id}" ${selected.has(p.id)?'checked':''} title="Selecionar (ou Ctrl+clique no cartão)">
+        <div><div class="name">${esc(p.name)}</div><div class="path">${esc(p.path)}</div></div></div>
+      <span class="pill ${st[0]}"><i></i>${st[1]}</span>
+    </div>
+    <div class="meta">${p.outdated?`<span class="tag" style="background:var(--coral-soft);color:var(--coral)">Atualização pendente · ${esc(p.version)} → ${esc(S.latest)}</span>`:''}<span class="tag">${MODE[p.mode]||p.mode}</span><span class="tag g">${esc(p.profile)}</span>${p.flags?`<span class="tag g">${esc(p.flags)}</span>`:''}</div>
+    <div class="actions">
+      ${p.running
+        ? `<button class="sm primary grow" data-a="focus" title="Ir para a janela desta sessão">Ir para</button><button class="sm" data-a="restart">Reiniciar</button><button class="sm danger" data-a="stop">Parar</button>`
+        : `<button class="sm primary grow" data-a="start" ${p.exists?'':'disabled'}>Iniciar</button>`}
+      <button class="sm ghost" data-a="edit">Editar</button>
+      <label class="tog" title="Incluir esta sessão em Restaurar workspace"><input type="checkbox" data-tog="${p.id}" ${p.enabled?'checked':''}> Restaurar</label>
+    </div>
+  </div>`;
+}
+
+$('#banner').addEventListener('click', e => { if(e.target.id==='importLive') act('/api/import-live', {}); });
+$('#tabs').addEventListener('click', e => {
+  const t = e.target.closest('button'); if(!t) return;
+  if(t.id==='newProf'){ const n = prompt('Nome do novo perfil:'); if(n) act('/api/profile',{name:n}); return; }
+  if(t.id==='delProf'){ if(confirm(`Apagar o perfil "${active}"? Os projetos passam para o primeiro perfil.`)){ const n=active; active='__all'; act('/api/profile/delete',{name:n}); } return; }
+  active = t.dataset.p; localStorage.setItem('ws_profile', active); render();
+});
+
+$('#board').addEventListener('change', e => {
+  const t = e.target.closest('input[data-tog]'); if(t) act('/api/toggle', {id:t.dataset.tog}, 'Atualizado');
+});
+$('#board').addEventListener('change', e => {
+  const c = e.target.closest('input[data-sel]'); if(c) toggleSel(c.dataset.sel);
+});
+$('#board').addEventListener('click', e => {
+  const cardEl = e.target.closest('.card');
+  if(cardEl && (e.ctrlKey || e.metaKey) && !e.target.closest('button,input,label')){ toggleSel(cardEl.dataset.id); return; }
+  const cm = e.target.closest('button[data-colmove]');
+  if(cm){
+    const arr = colOrder(), n = +cm.dataset.colmove, i = arr.indexOf(n), j = i + (+cm.dataset.dir);
+    if(i<0 || j<0 || j>=arr.length) return;
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+    return act('/api/ws-order', {order:arr}, 'Workspaces reordenados');
+  }
+  const sc = e.target.closest('button[data-selcol]');
+  if(sc){
+    const ids = S.projects.filter(p => String(p.workspace)===sc.dataset.selcol && shown(p)).map(p=>p.id);
+    const all = ids.length && ids.every(i=>selected.has(i));
+    ids.forEach(i => all ? selected.delete(i) : selected.add(i));
+    return render();
+  }
+  const o = e.target.closest('button[data-open]');
+  if(o) return act('/api/restore', {workspace:+o.dataset.open, profile: active==='__all'?null:active}, 'A abrir workspace...');
+  const b = e.target.closest('button[data-a]'); if(!b) return;
+  const id = b.closest('.card').dataset.id, p = S.projects.find(x=>x.id===id), a = b.dataset.a;
+  if(a==='edit') return openDlg(p);
+  act('/api/'+a, {id}, a==='start'?'A iniciar...':undefined);
+});
+
+// drag cards between workspace columns
+$('#board').addEventListener('dragstart', e => {
+  const h = e.target.closest('.colh');
+  if(h && !e.target.closest('.card')){
+    const col = h.closest('.colw'); dragCol = +col.dataset.ws; col.classList.add('drag');
+    e.dataTransfer.setData('text/plain', 'col'); e.dataTransfer.effectAllowed = 'move';
+    return;
+  }
+  const c = e.target.closest('.card'); if(!c) return;
+  e.dataTransfer.setData('text/plain', c.dataset.id);
+  dragId = c.dataset.id;
+  dragIds = selected.has(dragId) ? [...selected] : [dragId];
+  dragIds.forEach(i => document.querySelector(`.card[data-id="${i}"]`)?.classList.add('drag'));
+});
+function stopAuto(){ autoDX = 0; clearInterval(autoTimer); autoTimer = null; }
+$('#board').addEventListener('dragend', e => {
+  document.querySelectorAll('.drag,.over').forEach(x=>x.classList.remove('drag','over'));
+  stopAuto(); dragId = null; dragCol = null; refresh();
+});
+// scroll the board when dragging near its left/right edge (or the window edge)
+let autoDX = 0, autoTimer = null;
+document.addEventListener('dragover', e => {
+  if(!dragId && dragCol===null) return;
+  const r = $('#board').getBoundingClientRect(), z = 130;
+  const L = Math.max(r.left, 0), R = Math.min(r.right, window.innerWidth), x = e.clientX;
+  let k = 0;
+  if(x < L + z) k = -Math.min(1, (L + z - x) / z);
+  else if(x > R - z) k = Math.min(1, (x - (R - z)) / z);
+  autoDX = k * 34;
+  if(autoDX && !autoTimer) autoTimer = setInterval(() => { $('#board').scrollLeft += autoDX; if(!autoDX) stopAuto(); }, 16);
+  if(!autoDX) stopAuto();
+});
+$('#board').addEventListener('dragover', e => { const c=e.target.closest('.colw'); if(!c) return; e.preventDefault(); document.querySelectorAll('.over').forEach(x=>x.classList.remove('over')); c.classList.add('over'); });
+$('#board').addEventListener('drop', e => {
+  const c = e.target.closest('.colw');
+  if(dragCol !== null){
+    e.preventDefault(); if(!c) return;
+    const from = dragCol; dragCol = null; stopAuto();
+    return reorderCols(from, +c.dataset.ws);
+  }
+  if(!c||!dragId) return; e.preventDefault();
+  const ids = dragIds.length ? dragIds : [dragId]; stopAuto(); dragId = null; dragIds = [];
+  selected.clear();
+  act('/api/move', {ids, workspace:+c.dataset.ws}, ids.length > 1 ? `${ids.length} sessões movidas` : 'Movido');
+});
+
+$('#selClear').onclick = () => { selected.clear(); render(); };
+$('#selAll').onclick = () => { S.projects.filter(shown).forEach(p=>selected.add(p.id)); render(); };
+$('#selMove').onclick = () => {
+  const ids = [...selected]; if(!ids.length) return;
+  selected.clear();
+  act('/api/move', {ids, workspace:+$('#selTarget').value}, `${ids.length} movida(s)`);
+};
+document.addEventListener('keydown', e => { if(e.key==='Escape' && selected.size && !$('#dlg').open){ selected.clear(); render(); } });
+$('#restore').onclick = () => act('/api/restore', {profile: active==='__all'?null:active}, 'A restaurar o workspace...');
+$('#updAll').onclick = () => {
+  const busy = S.projects.filter(p=>p.outdated && p.busy && inView(p));
+  if(!confirm('Reiniciar as sessões desatualizadas? A conversa é retomada (--resume).')) return;
+  let force = false;
+  if(busy.length) force = confirm(`${busy.length} sessão(ões) estão a trabalhar agora (${busy.map(p=>p.name).join(', ')}).\n\nOK = reiniciar também essas (interrompe a tarefa).\nCancelar = deixá-las como estão.`);
+  act('/api/restart-outdated', {profile: active==='__all'?null:active, force});
+};
+$('#capture').onclick = () => {
+  if(confirm('Guardar o layout atual?\n\nLê em que workspace está cada janela aberta e grava isso. As sessões paradas não mudam.'))
+    act('/api/capture-layout', {});
+};
+$('#notify').onchange = e => act('/api/settings', {notify:e.target.checked}, e.target.checked ? 'Notificações ativadas' : 'Notificações desativadas');
+$('#stopAll').onclick = () => { if(confirm('Parar todas as sessões desta vista? As que estão a trabalhar não são fechadas.')) act('/api/stop-all', {profile: active==='__all'?null:active}); };
+$('#showStopped').onchange = e => {
+  showStopped = e.target.checked;
+  try{ localStorage.setItem('ws_show_stopped', showStopped ? '1' : '0'); }catch{}
+  render();
+};
+$('#auto').onchange = e => act('/api/autostart', {on:e.target.checked, profile: active==='__all'?null:active},
+  e.target.checked ? 'Restauro no login ativado' : 'Restauro no login desativado');
+
+async function openDlg(p){
+  editing = p || null;
+  $('#dlgTitle').textContent = p ? 'Editar projeto' : 'Novo projeto';
+  $('#fProfile').innerHTML = S.profiles.map(n=>`<option>${esc(n)}</option>`).join('');
+  $('#fName').value = p?.name || ''; $('#fPath').value = p?.path || '';
+  $('#fMode').value = p?.mode || 'continue'; $('#fFlags').value = p?.flags || '';
+  $('#fProfile').value = p?.profile || (active!=='__all' ? active : S.profiles[0]);
+  $('#fWs').value = p?.workspace || 1;
+  $('#fSid').value = p?.session_id || '';
+  $('#fEnabled').checked = p ? p.enabled : true;
+  $('#discBox').style.display = p ? 'none' : '';
+  document.querySelector('#delBtn')?.remove();
+  if(p){
+    const d = document.createElement('button'); d.type='button'; d.id='delBtn'; d.className='danger'; d.textContent='Remover';
+    d.onclick = () => { if(confirm(`Remover "${p.name}" do workspace? (não apaga a pasta)`)){ $('#dlg').close(); act('/api/delete',{id:p.id}); } };
+    $('#cancel').before(d);
+  } else {
+    try{
+      const found = await api('/api/discover');
+      $('#disc').innerHTML = found.length ? found.map(d=>`<button type="button" data-path="${esc(d.path)}" data-name="${esc(d.name)}">${esc(d.name)}<small>${esc(d.path)}</small></button>`).join('')
+        : '<div class="hint" style="padding:12px">Nenhum projeto novo encontrado.</div>';
+    }catch{ $('#disc').innerHTML=''; }
+  }
+  $('#dlg').showModal();
+}
+$('#disc').addEventListener('click', e => { const b=e.target.closest('button'); if(!b) return; $('#fName').value=b.dataset.name; $('#fPath').value=b.dataset.path; });
+$('#add').onclick = () => openDlg(null);
+$('#cancel').onclick = () => $('#dlg').close();
+$('#form').addEventListener('submit', async e => {
+  e.preventDefault();
+  const body = {id:editing?.id, name:$('#fName').value, path:$('#fPath').value, mode:$('#fMode').value,
+                flags:$('#fFlags').value, profile:$('#fProfile').value, workspace:+$('#fWs').value||1, session_id:$('#fSid').value, enabled:$('#fEnabled').checked};
+  try{ await api('/api/project', body); $('#dlg').close(); toast('Guardado'); refresh(); }
+  catch(err){ toast(err.message, true); }
+});
+
+refresh(); setInterval(refresh, 1500);
+</script>
+</body>
+</html>
