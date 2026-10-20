@@ -459,6 +459,8 @@ def layout_loop():
                         gone.pop(x["pid"], None)
                         if not p.get("enabled", True):
                             p["enabled"] = True
+                        if x["name"] and x["name"] != p["name"]:   # renamed inside Claude Code (/rename)
+                            p["name"] = x["name"]
                 # sessions that are not tracked yet join the layout
                 if untracked(cfg, live):
                     known = {p["id"] for p in cfg["projects"]}
