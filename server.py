@@ -450,6 +450,13 @@ def layout_loop():
                 OPT_OUT.intersection_update({x["pid"] for x in raw})
                 live = [x for x in raw if x["pid"] not in EXPECTED_GONE and x["pid"] not in OPT_OUT]
                 before = json.dumps(cfg, sort_keys=True)
+                sids, keep = set(), []
+                for p in cfg["projects"]:      # one entry per session id
+                    if p.get("session_id") and p["session_id"] in sids:
+                        continue
+                    sids.add(p.get("session_id"))
+                    keep.append(p)
+                cfg["projects"] = keep
                 m = match_projects(cfg, live)
                 # a stopped entry whose session is running again is active again
                 for p in cfg["projects"]:
@@ -545,16 +552,17 @@ def terminal_cmd(title, cwd, inner):
     return ["x-terminal-emulator", "-T", title, "-e", "bash", "-lc", inner]
 
 
-def ws_index_map(cfg):
-    """Workspace numbers are ordered ranks (1,2,5 -> indexes 0,1,2): avoids empty gaps in GNOME."""
-    nums = sorted({int(p.get("workspace", 1)) for p in cfg["projects"]})
+def ws_index_map(cfg, also=()):
+    """Workspace numbers of the sessions in the layout are ordered ranks (1,2,5 -> indexes 0,1,2): avoids empty gaps
+    in GNOME. Stopped sessions out of the layout do not take a place. `also` adds numbers (a session being started)."""
+    nums = sorted({int(p.get("workspace", 1)) for p in cfg["projects"] if p.get("enabled", True)}
+                  | {int(n) for n in also})
     return {n: i for i, n in enumerate(nums)}
 
 
 def ws_number(cfg, index):
-    """Inverse of ws_index_map: which workspace number sits at this GNOME workspace index."""
-    nums = sorted({int(p.get("workspace", 1)) for p in cfg["projects"]})
-    return nums[index] if index < len(nums) else (nums[-1] if nums else 0) + index - len(nums) + 1
+    """The workspace number of a window is simply its GNOME workspace index + 1 (no feedback from other numbers)."""
+    return int(index) + 1
 
 
 def apply_live_layout(cfg):
@@ -562,7 +570,7 @@ def apply_live_layout(cfg):
     live = live_sessions()
     m = match_projects(cfg, live)
     wins = session_windows(live)
-    imap = ws_index_map(cfg)
+    imap = ws_index_map(cfg, also={int(p["workspace"]) for p in cfg["projects"] if p["id"] in m})
     for p in cfg["projects"]:
         x = m.get(p["id"])
         w = wins.get(x["session_id"]) if x else None
@@ -605,7 +613,7 @@ def start(proj, cfg=None):
         return False, f"Pasta não existe: {real(proj['path'])}"
     if proj["id"] in match_projects(cfg, live_sessions()):
         return True, "já a correr"
-    idx = ws_index_map(cfg).get(int(proj.get("workspace", 1)), 0)
+    idx = ws_index_map(cfg, also={int(proj.get("workspace", 1))}).get(int(proj.get("workspace", 1)), 0)
     ok = open_window(proj, idx, bridge_ok())
     return True, "iniciado" + (f" no workspace {proj.get('workspace', 1)}" if ok else "")
 
@@ -705,10 +713,16 @@ def discover():
 
 
 def untracked(cfg, live):
-    """Live sessions not yet tracked by their own session id (folder-only entries do not count)."""
-    only_sid = {"projects": [p for p in cfg["projects"] if p.get("session_id")]}
-    matched = {x["pid"] for x in match_projects(only_sid, live).values()}
-    return [x for x in live if x["pid"] not in matched]
+    """Live sessions whose session id is not in the workspace yet (folder-only entries do not count).
+    Two processes with the same session id (a restart overlapping its predecessor) are one session."""
+    known = {p["session_id"] for p in cfg["projects"] if p.get("session_id")}
+    seen, out = set(), []
+    for x in live:
+        if x["session_id"] in known or x["session_id"] in seen:
+            continue
+        seen.add(x["session_id"])
+        out.append(x)
+    return out
 
 
 def import_live(cfg, live=None):
