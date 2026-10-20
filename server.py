@@ -36,8 +36,9 @@ def load():
         try:
             cfg = json.loads(CONFIG.read_text())
             for p in cfg.get("projects", []):
-                p.setdefault("workspace", 1)
                 p.setdefault("session_id", "")
+                # a session that is not in the layout has no workspace: you pick one when you start it again
+                p["workspace"] = (p.get("workspace") or 1) if p.get("enabled", True) else None
             cfg.setdefault("settings", {}).setdefault("notify", True)
             cfg["settings"].setdefault("panel_show_stopped", True)
             cfg["settings"].setdefault("auto_trust", False)  # opt-in: pre-accept the "trust this folder" dialog
@@ -52,6 +53,16 @@ def save(cfg):
     tmp = CONFIG.with_suffix(".tmp")
     tmp.write_text(json.dumps(cfg, indent=2, ensure_ascii=False))
     tmp.replace(CONFIG)
+
+
+def leave_layout(p):
+    p["enabled"] = False
+    p["workspace"] = None
+
+
+def join_layout(p, ws=None):
+    p["enabled"] = True
+    p["workspace"] = max(1, int(ws or p.get("workspace") or 1))
 
 
 def real(path):
@@ -465,7 +476,7 @@ def layout_loop():
                         seen[x["pid"]] = p["id"]
                         gone.pop(x["pid"], None)
                         if not p.get("enabled", True):
-                            p["enabled"] = True
+                            join_layout(p)
                         if x["name"] and x["name"] != p["name"]:   # renamed inside Claude Code (/rename)
                             p["name"] = x["name"]
                 # sessions that are not tracked yet join the layout
@@ -496,7 +507,7 @@ def layout_loop():
                             moved.pop(p["id"], None)
                             continue
                         num = ws_number(cfg, int(w["ws"]))
-                        if num == int(p["workspace"]):
+                        if num == p.get("workspace"):
                             moved.pop(p["id"], None)
                         elif moved.get(p["id"], (None, 0))[0] == num:
                             if moved[p["id"]][1] >= 1:     # seen at the new place on two polls in a row
@@ -517,7 +528,7 @@ def layout_loop():
                     for pid in vanished:
                         p = find(cfg, seen[pid])
                         if p and not any(seen.get(q) == p["id"] for q in alive):
-                            p["enabled"] = False
+                            leave_layout(p)
                 # several gone at once with none left (logout, crash): keep them in the layout
                 for pid in vanished:
                     seen.pop(pid, None)
@@ -555,7 +566,7 @@ def terminal_cmd(title, cwd, inner):
 def ws_index_map(cfg, also=()):
     """Workspace numbers of the sessions in the layout are ordered ranks (1,2,5 -> indexes 0,1,2): avoids empty gaps
     in GNOME. Stopped sessions out of the layout do not take a place. `also` adds numbers (a session being started)."""
-    nums = sorted({int(p.get("workspace", 1)) for p in cfg["projects"] if p.get("enabled", True)}
+    nums = sorted({int(p.get("workspace") or 1) for p in cfg["projects"] if p.get("enabled", True)}
                   | {int(n) for n in also})
     return {n: i for i, n in enumerate(nums)}
 
@@ -570,11 +581,11 @@ def apply_live_layout(cfg):
     live = live_sessions()
     m = match_projects(cfg, live)
     wins = session_windows(live)
-    imap = ws_index_map(cfg, also={int(p["workspace"]) for p in cfg["projects"] if p["id"] in m})
+    imap = ws_index_map(cfg, also={int(p["workspace"]) for p in cfg["projects"] if p["id"] in m and p.get("workspace")})
     for p in cfg["projects"]:
         x = m.get(p["id"])
         w = wins.get(x["session_id"]) if x else None
-        want = imap.get(int(p["workspace"]))
+        want = imap.get(int(p["workspace"])) if p.get("workspace") else None
         if w and want is not None and w.get("ws", -1) != want:
             try:
                 bridge("MoveToWorkspace", f"uint64 {w['id']}", f"int32 {want}")
@@ -607,15 +618,17 @@ def open_window(proj, ws_index, placed):
     return False
 
 
-def start(proj, cfg=None):
+def start(proj, cfg=None, ws=None):
     cfg = cfg or load()
     if not os.path.isdir(real(proj["path"])):
         return False, f"Pasta não existe: {real(proj['path'])}"
     if proj["id"] in match_projects(cfg, live_sessions()):
         return True, "já a correr"
-    idx = ws_index_map(cfg, also={int(proj.get("workspace", 1))}).get(int(proj.get("workspace", 1)), 0)
+    join_layout(proj, ws)   # starting a session puts it in the layout (workspace 1 unless you chose another)
+    n = int(proj["workspace"])
+    idx = ws_index_map(cfg, also={n}).get(n, 0)
     ok = open_window(proj, idx, bridge_ok())
-    return True, "iniciado" + (f" no workspace {proj.get('workspace', 1)}" if ok else "")
+    return True, "iniciado" + (f" no workspace {n}" if ok else "")
 
 
 def stop(proj, cfg=None):
@@ -737,7 +750,7 @@ def import_live(cfg, live=None):
         cfg["projects"].append({
             "id": uuid.uuid4().hex[:8], "name": s["name"] or os.path.basename(s["cwd"]) or "sessão",
             "path": s["cwd"], "session_id": s["session_id"], "mode": "continue", "flags": s["flags"],
-            "profile": prof, "workspace": folder["workspace"] if folder else 1, "enabled": True})
+            "profile": prof, "workspace": (folder.get("workspace") if folder else None) or 1, "enabled": True})
         added += 1
     # drop folder-only entries now represented by named sessions
     covered = {s["cwd"] for s in new}
@@ -850,6 +863,8 @@ class H(BaseHTTPRequestHandler):
                   "session_id": sid, "mode": data.get("mode") if data.get("mode") in MODES else "continue",
                   "flags": str(data.get("flags", "")).strip(), "profile": data.get("profile") or cfg["profiles"][0],
                   "workspace": wsn, "enabled": bool(data.get("enabled", True))}
+            if not pr["enabled"]:
+                pr["workspace"] = None
             if not pr["name"] or not pr["path"]:
                 return self._send(400, {"error": "nome e pasta obrigatórios"})
             if pr["profile"] not in cfg["profiles"]:
@@ -867,28 +882,39 @@ class H(BaseHTTPRequestHandler):
             ps = [p for p in (find(cfg, i) for i in ids) if p]
             if not ps:
                 return self._send(404, {"error": "projeto não encontrado"})
+            target = max(1, int(data.get("workspace", 1))) if path == "/api/move" else None
+            started = 0
             for p in ps:
                 if path == "/api/move":
-                    p["workspace"] = max(1, int(data.get("workspace", 1)))
+                    running = match_projects(cfg, live_sessions()).get(p["id"])
+                    if p.get("enabled", True) or running:
+                        p["workspace"] = target
+                    else:   # dropped a stopped session on a workspace: start it there
+                        ok, _ = start(p, cfg, target)
+                        started += 1 if ok else 0
                 else:
-                    p["enabled"] = not p.get("enabled", True)
                     x = match_projects(cfg, live_sessions()).get(p["id"])
-                    if x and not p["enabled"]:   # still running: keep it running but out of the layout
-                        OPT_OUT.add(x["pid"])
-                    elif x:
-                        OPT_OUT.discard(x["pid"])
+                    if p.get("enabled", True):
+                        leave_layout(p)
+                        if x:   # still running: keep it running but out of the layout
+                            OPT_OUT.add(x["pid"])
+                    else:
+                        join_layout(p)
+                        if x:
+                            OPT_OUT.discard(x["pid"])
             save(cfg)
             if path == "/api/move":
                 apply_live_layout(cfg)
-            msg = f"{len(ps)} sessão(ões) atualizada(s)"
+            msg = f"{len(ps)} sessão(ões) atualizada(s)" + (f", {started} iniciada(s)" if started else "")
         elif path == "/api/ws-order":
             # `order` lists the current workspace numbers in their new left-to-right order
             order = [int(x) for x in data.get("order", [])]
-            present = sorted({int(p["workspace"]) for p in cfg["projects"]})
+            present = sorted({int(p["workspace"]) for p in cfg["projects"] if p.get("workspace")})
             full = [n for n in order if n in present] + [n for n in present if n not in order]
             mapping = {old: i + 1 for i, old in enumerate(full)}
             for p in cfg["projects"]:
-                p["workspace"] = mapping[int(p["workspace"])]
+                if p.get("workspace"):
+                    p["workspace"] = mapping[int(p["workspace"])]
             save(cfg)
             apply_live_layout(cfg)
             msg = "Workspaces reordenados"
@@ -938,11 +964,14 @@ class H(BaseHTTPRequestHandler):
                 return self._send(404, {"error": "projeto não encontrado"})
             if path == "/api/restart":
                 stop(p, cfg)
-            fn = {"/api/start": start, "/api/stop": stop, "/api/restart": start}[path]
-            ok, msg = fn(p, cfg) if path != "/api/restart" else fn(p)
+            if path == "/api/stop":
+                ok, msg = stop(p, cfg)
+                leave_layout(p)               # stopped in the app: out of the layout, no workspace
+            else:
+                ws = data.get("workspace") if path == "/api/start" else None
+                ok, msg = start(p, cfg, ws)   # start/restart (re)joins the layout
             if not ok:
                 return self._send(500, {"error": msg})
-            p["enabled"] = path != "/api/stop"   # stop in the app leaves the layout; start/restart (re)joins it
             save(cfg)
         elif path == "/api/restart-outdated":
             latest = installed_version()
@@ -978,7 +1007,7 @@ class H(BaseHTTPRequestHandler):
             terminate_many(pids)
             for p in cfg["projects"]:  # closed from the app: out of the layout
                 if p["id"] in m and m[p["id"]]["pid"] in pids:
-                    p["enabled"] = False
+                    leave_layout(p)
             save(cfg)
             msg = f"{len(pids)} sessão(ões) fechadas" + (f", {busy} a trabalhar ignoradas" if busy else "")
         elif path == "/api/autostart":

@@ -233,7 +233,7 @@ class ClaudeWsIndicator extends PanelMenu.Button {
         const old = ps.filter(p => p.outdated).length;
         const rs = st.restore ?? {};
         const show = this._showStopped;
-        const nums = [...new Set(ps.map(p => p.workspace))].sort((a, b) => a - b);
+        const nums = [...new Set(ps.filter(p => p.workspace != null).map(p => p.workspace))].sort((a, b) => a - b);
         const rows = ps.map(p => ({...p, rank: nums.indexOf(p.workspace) + 1}));
         const here = global.workspace_manager.get_active_workspace_index();
 
@@ -272,8 +272,9 @@ class ClaudeWsIndicator extends PanelMenu.Button {
         // workspaces
         const grid = new St.BoxLayout({vertical: true, x_expand: true, style: 'spacing: 14px;'});
         let hidden = 0;
-        nums.forEach((n, i) => {
-            const group = rows.filter(p => p.workspace === n);
+        const sections = nums.map((n, i) => ({title: `Workspace ${i + 1}`, i, group: rows.filter(p => p.workspace === n)}));
+        sections.push({title: 'Inativas', i: -1, group: rows.filter(p => p.workspace == null)});   // no workspace until started
+        sections.forEach(({title, i, group}) => {
             const alive = group.filter(p => p.running);
             const visible = show ? group : alive;
             hidden += group.length - visible.length;
@@ -283,7 +284,7 @@ class ClaudeWsIndicator extends PanelMenu.Button {
             const block = new St.BoxLayout({vertical: true, x_expand: true, style: 'spacing: 8px;'});
             const hd = new St.BoxLayout({x_expand: true, style: 'spacing: 8px;'});
             hd.add_child(new St.Label({
-                text: `Workspace ${i + 1}`, y_align: Clutter.ActorAlign.CENTER, style: 'font-weight: bold;',
+                text: title, y_align: Clutter.ActorAlign.CENTER, style: 'font-weight: bold;',
             }));
             hd.add_child(new St.Label({
                 text: `${alive.length}/${group.length}`, y_align: Clutter.ActorAlign.CENTER,

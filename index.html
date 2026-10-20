@@ -237,7 +237,7 @@ function render(){
     `<button class="tab" id="newProf" title="Novo perfil">+</button>` +
     (active!=='__all' ? `<button class="tab" id="delProf">apagar perfil</button>` : '');
 
-  const nums = [...new Set(S.projects.map(p=>p.workspace))].sort((a,b)=>a-b);
+  const nums = [...new Set(S.projects.filter(p=>p.workspace!=null).map(p=>p.workspace))].sort((a,b)=>a-b);
   const next = (nums[nums.length-1]||0) + 1;
   const col = n => {
     const ps = S.projects.filter(p => p.workspace===n && shown(p));
@@ -251,8 +251,14 @@ function render(){
       ${ps.map(card).join('')}
     </div>`;
   };
+  const off = S.projects.filter(p => p.workspace==null && shown(p));
+  const offCol = off.length ? `<div class="colw off" data-ws="off">
+      <div class="colh"><div><b>Inativas</b><span class="cnt">${off.length}</span></div>
+      <div class="hint" style="font-size:12px;opacity:.7">sem workspace · escolhe ao iniciar</div></div>
+      ${off.map(card).join('')}
+    </div>` : '';
   const bd = $('#board'), keep = bd.scrollLeft;
-  bd.innerHTML = (nums.length ? nums.map(col).join('') : '') +
+  bd.innerHTML = (nums.length ? nums.map(col).join('') : '') + offCol +
     `<div class="colw new" data-ws="${next}"><div>Arrasta um cartão para aqui<br>para criar um novo workspace</div></div>`;
   bd.scrollLeft = keep;
   renderSelbar(nums, next);
@@ -268,6 +274,13 @@ function renderSelbar(nums, next){
   if([...sel.options].some(o=>o.value===prev)) sel.value = prev;
 }
 
+function wsOptions(){
+  const nums = [...new Set(S.projects.filter(p=>p.workspace!=null).map(p=>p.workspace))].sort((a,b)=>a-b);
+  const next = (nums[nums.length-1]||0) + 1;
+  const list = nums.length ? nums : [1];
+  return list.map((n,i)=>`<option value="${n}">Workspace ${i+1}</option>`).join('') + `<option value="${nums.length?next:2}">Novo workspace</option>`;
+}
+
 function card(p){
   const st = !p.exists ? ['miss','Pasta em falta'] : p.running ? (p.busy ? ['busy','A trabalhar'] : ['run','Ativa']) : ['stop','Parado'];
   return `<div class="card ${p.running?'run':''} ${p.enabled?'':'off'} ${selected.has(p.id)?'picked':''}" draggable="true" data-id="${p.id}">
@@ -280,7 +293,7 @@ function card(p){
     <div class="actions">
       ${p.running
         ? `<button class="sm primary grow" data-a="focus" title="Ir para a janela desta sessão">Ir para</button><button class="sm" data-a="restart">Reiniciar</button><button class="sm danger" data-a="stop">Parar</button>`
-        : `<button class="sm primary grow" data-a="start" ${p.exists?'':'disabled'}>Iniciar</button>`}
+        : `${p.workspace==null ? `<select class="sm" data-startws title="Em que workspace abrir (por defeito o 1)">${wsOptions()}</select>` : ''}<button class="sm primary grow" data-a="start" ${p.exists?'':'disabled'}>Iniciar</button>`}
       <button class="sm ghost" data-a="edit">Editar</button>
       <label class="tog" title="Incluir esta sessão em Restaurar workspace"><input type="checkbox" data-tog="${p.id}" ${p.enabled?'checked':''}> No layout</label>
     </div>
@@ -323,7 +336,8 @@ $('#board').addEventListener('click', e => {
   const b = e.target.closest('button[data-a]'); if(!b) return;
   const id = b.closest('.card').dataset.id, p = S.projects.find(x=>x.id===id), a = b.dataset.a;
   if(a==='edit') return openDlg(p);
-  act('/api/'+a, {id}, a==='start'?'A iniciar...':undefined);
+  const sel = b.closest('.actions').querySelector('select[data-startws]');
+  act('/api/'+a, a==='start' && sel ? {id, workspace:+sel.value} : {id}, a==='start'?'A iniciar...':undefined);
 });
 
 // drag cards between workspace columns
@@ -367,6 +381,7 @@ $('#board').addEventListener('drop', e => {
     return reorderCols(from, +c.dataset.ws);
   }
   if(!c||!dragId) return; e.preventDefault();
+  if(c.dataset.ws==='off'){ stopAuto(); dragId = null; dragIds = []; return; }   // inactive column: nothing to drop on
   const ids = dragIds.length ? dragIds : [dragId]; stopAuto(); dragId = null; dragIds = [];
   selected.clear();
   act('/api/move', {ids, workspace:+c.dataset.ws}, ids.length > 1 ? `${ids.length} sessões movidas` : 'Movido');
