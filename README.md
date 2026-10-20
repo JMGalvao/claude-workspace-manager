@@ -55,6 +55,7 @@ A tua configuração fica em `workspace.json`, criado na primeira instalação a
 - Uma sessão nova que abras (em qualquer terminal) entra sozinha no layout, no workspace onde está a janela.
 - Só sai do layout quando a fechas tu (X da janela, `/exit`) ou carregas em "Parar" na app.
 - Desligar o PC, terminar sessão, reiniciar o servidor, "Reiniciar" ou "Reiniciar desatualizadas" **não** tiram nada do layout: no próximo "Restaurar" voltam todas.
+- O workspace de cada sessão é o da janela **neste momento** (GNOME): se a moveres de workspace, a app apanha em poucos segundos. O contrário também vale: mover ou reordenar na app move as janelas.
 - Se desligares a caixa de uma sessão que está a correr, ela continua a correr mas fora do layout.
 
 ## Segurança

@@ -25,6 +25,7 @@ RESTORE = {"running": False, "done": 0, "total": 0, "current": "", "log": [], "p
 RESTORE_LOCK = threading.Lock()
 CFG_LOCK = threading.RLock()   # serialises read-modify-write of workspace.json (HTTP handlers + layout watcher)
 OPT_OUT = set()               # pids the user took out of the layout by hand while they keep running
+SYNC_HOLD = [0.0]              # the watcher does not read window positions before this time
 EXPECTED_GONE = {}             # pid -> when we closed it ourselves (stop/restart/update): not a user closing it
 SHUTDOWN = threading.Event()   # set when the server itself is told to stop (logout, shutdown, restart)
 
@@ -328,7 +329,7 @@ def capture_layout(cfg):
             continue
         w = sw.get(s["session_id"])
         if w and w.get("ws", -1) >= 0:
-            p["workspace"] = int(w["ws"]) + 1
+            p["workspace"] = ws_number(cfg, int(w["ws"]))
             got.append(p["name"])
         else:
             miss.append(p["name"])
@@ -432,6 +433,7 @@ def shutting_down():
 def layout_loop():
     seen = {}       # pid -> project id, for sessions seen running as part of the layout
     gone = {}       # pid -> consecutive polls without it
+    moved = {}      # project id -> (workspace number seen, polls seen there): debounce for the live layout
     placing = {}    # session_id -> first seen, new sessions waiting for their window to learn the workspace
     while True:
         time.sleep(2)
@@ -473,8 +475,28 @@ def layout_loop():
                     if w and w.get("ws", -1) >= 0:
                         for p in cfg["projects"]:
                             if p.get("session_id") == sid:
-                                p["workspace"] = int(w["ws"]) + 1
+                                p["workspace"] = ws_number(cfg, int(w["ws"]))
                         placing.pop(sid)
+                # live layout: the workspace of a running session is the one its window is in right now
+                if not RESTORE["running"] and now > SYNC_HOLD[0] and now - RESTORE.get("ended", 0) > 15:
+                    wins = session_windows(live)
+                    for p in cfg["projects"]:
+                        x = m.get(p["id"])
+                        w = wins.get(x["session_id"]) if x else None
+                        if not w or w.get("ws", -1) < 0:
+                            moved.pop(p["id"], None)
+                            continue
+                        num = ws_number(cfg, int(w["ws"]))
+                        if num == int(p["workspace"]):
+                            moved.pop(p["id"], None)
+                        elif moved.get(p["id"], (None, 0))[0] == num:
+                            if moved[p["id"]][1] >= 1:     # seen at the new place on two polls in a row
+                                p["workspace"] = num
+                                moved.pop(p["id"], None)
+                            else:
+                                moved[p["id"]] = (num, moved[p["id"]][1] + 1)
+                        else:
+                            moved[p["id"]] = (num, 0)
                 # sessions that disappeared: the user closed them
                 alive = {x["pid"] for x in live} | set(EXPECTED_GONE)
                 for pid in list(seen):
@@ -525,6 +547,30 @@ def ws_index_map(cfg):
     """Workspace numbers are ordered ranks (1,2,5 -> indexes 0,1,2): avoids empty gaps in GNOME."""
     nums = sorted({int(p.get("workspace", 1)) for p in cfg["projects"]})
     return {n: i for i, n in enumerate(nums)}
+
+
+def ws_number(cfg, index):
+    """Inverse of ws_index_map: which workspace number sits at this GNOME workspace index."""
+    nums = sorted({int(p.get("workspace", 1)) for p in cfg["projects"]})
+    return nums[index] if index < len(nums) else (nums[-1] if nums else 0) + index - len(nums) + 1
+
+
+def apply_live_layout(cfg):
+    """Move the windows of running sessions to the workspace the layout says (after a move/reorder in the app)."""
+    live = live_sessions()
+    m = match_projects(cfg, live)
+    wins = session_windows(live)
+    imap = ws_index_map(cfg)
+    for p in cfg["projects"]:
+        x = m.get(p["id"])
+        w = wins.get(x["session_id"]) if x else None
+        want = imap.get(int(p["workspace"]))
+        if w and want is not None and w.get("ws", -1) != want:
+            try:
+                bridge("MoveToWorkspace", f"uint64 {w['id']}", f"int32 {want}")
+            except Exception:
+                pass
+    SYNC_HOLD[0] = time.time() + 5
 
 
 def open_window(proj, ws_index, placed):
@@ -603,7 +649,7 @@ def _restore_job(profile, workspace, ids=None):
             except Exception:
                 pass
     finally:
-        RESTORE.update(running=False, current="")
+        RESTORE.update(running=False, current="", ended=time.time())
         try:
             (HERE / "last-restore.json").write_text(json.dumps(
                 {"when": time.strftime("%Y-%m-%d %H:%M:%S"), **{k: RESTORE[k] for k in ("done", "total", "placed", "log")}},
@@ -816,6 +862,8 @@ class H(BaseHTTPRequestHandler):
                     elif x:
                         OPT_OUT.discard(x["pid"])
             save(cfg)
+            if path == "/api/move":
+                apply_live_layout(cfg)
             msg = f"{len(ps)} sessão(ões) atualizada(s)"
         elif path == "/api/ws-order":
             # `order` lists the current workspace numbers in their new left-to-right order
@@ -826,6 +874,7 @@ class H(BaseHTTPRequestHandler):
             for p in cfg["projects"]:
                 p["workspace"] = mapping[int(p["workspace"])]
             save(cfg)
+            apply_live_layout(cfg)
             msg = "Workspaces reordenados"
         elif path == "/api/focus":
             p = find(cfg, data.get("id"))
