@@ -49,6 +49,14 @@ O macOS pede permissão de Automação para controlar o Terminal: aceita. Os "wo
 
 A tua configuração fica em `workspace.json`, criado na primeira instalação a partir de `workspace.example.json`. **Esse ficheiro tem os teus caminhos e ids de sessão e está no `.gitignore`: não o publiques.**
 
+## O layout segue as sessões ativas
+
+"No layout" (a caixa de cada sessão) é automático:
+- Uma sessão nova que abras (em qualquer terminal) entra sozinha no layout, no workspace onde está a janela.
+- Só sai do layout quando a fechas tu (X da janela, `/exit`) ou carregas em "Parar" na app.
+- Desligar o PC, terminar sessão, reiniciar o servidor, "Reiniciar" ou "Reiniciar desatualizadas" **não** tiram nada do layout: no próximo "Restaurar" voltam todas.
+- Se desligares a caixa de uma sessão que está a correr, ela continua a correr mas fora do layout.
+
 ## Segurança
 
 - O servidor só escuta em `127.0.0.1` e rejeita pedidos com `Host` ou `Origin` que não sejam o dele (protege contra páginas web que tentem falar com ele).

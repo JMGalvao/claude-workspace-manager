@@ -282,7 +282,7 @@ function card(p){
         ? `<button class="sm primary grow" data-a="focus" title="Ir para a janela desta sessão">Ir para</button><button class="sm" data-a="restart">Reiniciar</button><button class="sm danger" data-a="stop">Parar</button>`
         : `<button class="sm primary grow" data-a="start" ${p.exists?'':'disabled'}>Iniciar</button>`}
       <button class="sm ghost" data-a="edit">Editar</button>
-      <label class="tog" title="Incluir esta sessão em Restaurar workspace"><input type="checkbox" data-tog="${p.id}" ${p.enabled?'checked':''}> Restaurar</label>
+      <label class="tog" title="Incluir esta sessão em Restaurar workspace"><input type="checkbox" data-tog="${p.id}" ${p.enabled?'checked':''}> No layout</label>
     </div>
   </div>`;
 }

@@ -23,6 +23,10 @@ UUID_RE = re.compile(r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]
 
 RESTORE = {"running": False, "done": 0, "total": 0, "current": "", "log": [], "placed": True}
 RESTORE_LOCK = threading.Lock()
+CFG_LOCK = threading.RLock()   # serialises read-modify-write of workspace.json (HTTP handlers + layout watcher)
+OPT_OUT = set()               # pids the user took out of the layout by hand while they keep running
+EXPECTED_GONE = {}             # pid -> when we closed it ourselves (stop/restart/update): not a user closing it
+SHUTDOWN = threading.Event()   # set when the server itself is told to stop (logout, shutdown, restart)
 
 
 # ---------- config ----------
@@ -197,6 +201,7 @@ def terminal_shell(pid):
 def terminate(pid):
     """Stop claude, then close its terminal tab/window (shell is its parent when started by hand)."""
     shell = terminal_shell(pid)
+    EXPECTED_GONE[pid] = time.time()
     try:
         os.kill(pid, signal.SIGTERM)
     except ProcessLookupError:
@@ -406,6 +411,92 @@ def notifier_loop():
             nlog(f"ERRO no notificador: {e!r}")
 
 
+# ---------- layout = the sessions that are active ----------
+# `enabled` means "is in the layout". It follows reality: a new session joins by itself, and one leaves only when
+# the user closes it (X, /exit) or stops it in the app. Shutdown, logout, restart and update never remove anything.
+def shutting_down():
+    if SHUTDOWN.is_set():
+        return True
+    if IS_MAC:
+        return False
+    try:  # logind raises this flag as soon as a poweroff/reboot begins, before processes are killed
+        r = subprocess.run(["gdbus", "call", "--system", "--dest", "org.freedesktop.login1",
+                            "--object-path", "/org/freedesktop/login1", "--method", "org.freedesktop.DBus.Properties.Get",
+                            "org.freedesktop.login1.Manager", "PreparingForShutdown"],
+                           capture_output=True, text=True, timeout=3)
+        return "true" in r.stdout.lower()
+    except Exception:
+        return False
+
+
+def layout_loop():
+    seen = {}       # pid -> project id, for sessions seen running as part of the layout
+    gone = {}       # pid -> consecutive polls without it
+    placing = {}    # session_id -> first seen, new sessions waiting for their window to learn the workspace
+    while True:
+        time.sleep(2)
+        try:
+            now = time.time()
+            for pid in [p for p, t in EXPECTED_GONE.items() if now - t > 120]:
+                EXPECTED_GONE.pop(pid, None)
+            if shutting_down():
+                seen.clear(); gone.clear()
+                continue
+            with CFG_LOCK:
+                cfg = load()
+                raw = live_sessions()
+                OPT_OUT.intersection_update({x["pid"] for x in raw})
+                live = [x for x in raw if x["pid"] not in EXPECTED_GONE and x["pid"] not in OPT_OUT]
+                before = json.dumps(cfg, sort_keys=True)
+                m = match_projects(cfg, live)
+                # a stopped entry whose session is running again is active again
+                for p in cfg["projects"]:
+                    x = m.get(p["id"])
+                    if x:
+                        seen[x["pid"]] = p["id"]
+                        gone.pop(x["pid"], None)
+                        if not p.get("enabled", True):
+                            p["enabled"] = True
+                # sessions that are not tracked yet join the layout
+                if untracked(cfg, live):
+                    known = {p["id"] for p in cfg["projects"]}
+                    import_live(cfg, live)
+                    for p in cfg["projects"]:
+                        if p["id"] not in known and p.get("session_id"):
+                            placing[p["session_id"]] = now
+                # new sessions: copy the workspace of the window they are in
+                for sid in list(placing):
+                    if now - placing[sid] > 30:
+                        placing.pop(sid)
+                        continue
+                    w = session_windows([x for x in live if x["session_id"] == sid]).get(sid)
+                    if w and w.get("ws", -1) >= 0:
+                        for p in cfg["projects"]:
+                            if p.get("session_id") == sid:
+                                p["workspace"] = int(w["ws"]) + 1
+                        placing.pop(sid)
+                # sessions that disappeared: the user closed them
+                alive = {x["pid"] for x in live} | set(EXPECTED_GONE)
+                for pid in list(seen):
+                    if pid in alive:
+                        continue
+                    gone[pid] = gone.get(pid, 0) + 1
+                vanished = [pid for pid in seen if gone.get(pid, 0) >= 3]
+                if len(vanished) == 1 or (vanished and len(seen) > len(vanished)):
+                    for pid in vanished:
+                        p = find(cfg, seen[pid])
+                        if p and not any(seen.get(q) == p["id"] for q in alive):
+                            p["enabled"] = False
+                # several gone at once with none left (logout, crash): keep them in the layout
+                for pid in vanished:
+                    seen.pop(pid, None)
+                    gone.pop(pid, None)
+                if json.dumps(cfg, sort_keys=True) != before:
+                    save(cfg)
+        except Exception as e:
+            nlog(f"ERRO no vigia do layout: {e!r}")
+
+
 # ---------- launching ----------
 def build_cmd(proj):
     parts = ["claude"]
@@ -572,9 +663,9 @@ def untracked(cfg, live):
     return [x for x in live if x["pid"] not in matched]
 
 
-def import_live(cfg):
+def import_live(cfg, live=None):
     """Add every running session not yet in the workspace as its own entry. Folder-only entries it covers are replaced."""
-    live = live_sessions()
+    live = live if live is not None else live_sessions()
     new = untracked(cfg, live)
     added = 0
     for s in new:
@@ -679,6 +770,10 @@ class H(BaseHTTPRequestHandler):
             data = json.loads(self.rfile.read(n) or b"{}")
         except Exception:
             return self._send(400, {"error": "bad json"})
+        with CFG_LOCK:
+            self._post(data)
+
+    def _post(self, data):
         cfg = load()
         path, msg = self.path, "ok"
         if path == "/api/project":
@@ -715,6 +810,11 @@ class H(BaseHTTPRequestHandler):
                     p["workspace"] = max(1, int(data.get("workspace", 1)))
                 else:
                     p["enabled"] = not p.get("enabled", True)
+                    x = match_projects(cfg, live_sessions()).get(p["id"])
+                    if x and not p["enabled"]:   # still running: keep it running but out of the layout
+                        OPT_OUT.add(x["pid"])
+                    elif x:
+                        OPT_OUT.discard(x["pid"])
             save(cfg)
             msg = f"{len(ps)} sessão(ões) atualizada(s)"
         elif path == "/api/ws-order":
@@ -777,6 +877,8 @@ class H(BaseHTTPRequestHandler):
             ok, msg = fn(p, cfg) if path != "/api/restart" else fn(p)
             if not ok:
                 return self._send(500, {"error": msg})
+            p["enabled"] = path != "/api/stop"   # stop in the app leaves the layout; start/restart (re)joins it
+            save(cfg)
         elif path == "/api/restart-outdated":
             latest = installed_version()
             prof = data.get("profile")
@@ -801,14 +903,18 @@ class H(BaseHTTPRequestHandler):
         elif path == "/api/stop-all":
             prof = data.get("profile")
             live = live_sessions()
+            m = match_projects(cfg, live)
             if prof:
-                m = match_projects(cfg, live)
                 cand = [m[p["id"]] for p in cfg["projects"] if p["id"] in m and p["profile"] == prof]
             else:  # everything running, tracked or not
                 cand = live
             pids = [x["pid"] for x in cand if x["status"] != "busy"]  # never kill one that is working
             busy = len(cand) - len(pids)
             terminate_many(pids)
+            for p in cfg["projects"]:  # closed from the app: out of the layout
+                if p["id"] in m and m[p["id"]]["pid"] in pids:
+                    p["enabled"] = False
+            save(cfg)
             msg = f"{len(pids)} sessão(ões) fechadas" + (f", {busy} a trabalhar ignoradas" if busy else "")
         elif path == "/api/autostart":
             set_autostart(bool(data.get("on")), data.get("profile"))
@@ -819,7 +925,13 @@ class H(BaseHTTPRequestHandler):
 
 def main():
     threading.Thread(target=notifier_loop, daemon=True).start()
+    threading.Thread(target=layout_loop, daemon=True).start()
     srv = ThreadingHTTPServer((HOST, PORT), H)
+
+    def on_term(*_):  # logout / shutdown / service restart: from now on nothing leaves the layout
+        SHUTDOWN.set()
+        threading.Thread(target=srv.shutdown, daemon=True).start()
+    signal.signal(signal.SIGTERM, on_term)
     print(f"Claude Workspace em http://localhost:{PORT}")
     try:
         srv.serve_forever()
