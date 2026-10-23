@@ -377,17 +377,54 @@ def _notify(name, sid):
         except Exception as e:
             nlog(f"ERRO a notificar {name}: {e}")
         return
+    _notify_linux(name, sid)
+
+
+NOTIF_IDS = {}      # session_id -> id of its last notification: a new one replaces it instead of piling up
+NOTIF_SID = {}      # notification id -> session_id, to know which session a click belongs to
+NOTIF_BUS = ["gdbus", "call", "--session", "--dest", "org.freedesktop.Notifications",
+             "--object-path", "/org/freedesktop/Notifications", "--method"]
+
+
+def _notify_linux(name, sid):
     try:
+        old = NOTIF_IDS.get(sid, 0)
         r = subprocess.run(
-            ["notify-send", "--app-name=Claude Workspace", "--icon=utilities-terminal",
-             "-A", "default=Ir para a sessão", f"{name} terminou", "Clica para ir para a sessão."],
-            capture_output=True, text=True, timeout=180)
-        nlog(f"entregue: {name} (resposta: {r.stdout.strip() or 'sem clique'})")
-        if r.stdout.strip() == "default":  # click on the notification body (GNOME shows no button for it)
-            for w in session_windows([s for s in live_sessions() if s["session_id"] == sid]).values():
-                focus_window(w)
+            NOTIF_BUS + ["org.freedesktop.Notifications.Notify", "Claude Workspace", str(old), "utilities-terminal",
+                         f"{name} terminou", "Clica para ir para a sessão.", "['default','Ir para a sessão']", "{}", "int32 -1"],
+            capture_output=True, text=True, timeout=10)
+        m = re.search(r"uint32 (\d+)", r.stdout)
+        if not m:
+            nlog(f"ERRO a notificar {name}: {r.stderr.strip() or r.stdout.strip()}")
+            return
+        nid = int(m.group(1))
+        NOTIF_IDS[sid] = nid
+        NOTIF_SID[nid] = sid
+        nlog(f"entregue: {name} (id {nid}{', substituiu a anterior' if old == nid else ''})")
     except Exception as e:
         nlog(f"ERRO a notificar {name}: {e}")
+
+
+def notif_click_loop():
+    """Listen for clicks on our notifications (ActionInvoked) and go to the session they belong to."""
+    if IS_MAC:
+        return
+    while True:
+        try:
+            p = subprocess.Popen(["gdbus", "monitor", "--session", "--dest", "org.freedesktop.Notifications"],
+                                 stdout=subprocess.PIPE, text=True)
+            for line in p.stdout:
+                m = re.search(r"ActionInvoked \(uint32 (\d+), '([^']*)'\)", line)
+                if not m or m.group(2) != "default":
+                    continue
+                sid = NOTIF_SID.get(int(m.group(1)))
+                if sid:
+                    nlog(f"clique na notificação {m.group(1)}")
+                    for w in session_windows([s for s in live_sessions() if s["session_id"] == sid]).values():
+                        focus_window(w)
+        except Exception as e:
+            nlog(f"ERRO a ouvir cliques: {e!r}")
+        time.sleep(3)
 
 
 def notifier_loop():
@@ -1019,6 +1056,7 @@ class H(BaseHTTPRequestHandler):
 
 def main():
     threading.Thread(target=notifier_loop, daemon=True).start()
+    threading.Thread(target=notif_click_loop, daemon=True).start()
     threading.Thread(target=layout_loop, daemon=True).start()
     srv = ThreadingHTTPServer((HOST, PORT), H)
 
