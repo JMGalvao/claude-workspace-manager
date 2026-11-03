@@ -456,6 +456,33 @@ def _notify_linux(name, sid):
         nlog(f"ERRO a notificar {name}: {e}")
 
 
+def _close_notification(nid):
+    conn = _conn["c"] if gi is not None else None
+    if conn is not None:
+        conn.call_sync("org.freedesktop.Notifications", "/org/freedesktop/Notifications", "org.freedesktop.Notifications",
+                       "CloseNotification", GLib.Variant("(u)", (nid,)), None, Gio.DBusCallFlags.NONE, 5000, None)
+    else:
+        subprocess.run(NOTIF_BUS + ["org.freedesktop.Notifications.CloseNotification", str(nid)],
+                       capture_output=True, timeout=10)
+
+
+def dismiss_seen(live):
+    """A notification is about a reply the user has now seen once its window has the focus, so drop it from the list."""
+    if IS_MAC or not NOTIF_IDS:
+        return
+    pending = [s for s in live if s["session_id"] in NOTIF_IDS]
+    for sid, w in session_windows(pending).items():
+        if w.get("focus"):
+            nid = NOTIF_IDS.pop(sid, None)
+            NOTIF_SID.pop(nid, None)
+            if nid:
+                try:
+                    _close_notification(nid)
+                    nlog(f"fechada (sessão vista): id {nid}")
+                except Exception as e:
+                    nlog(f"ERRO a fechar {nid}: {e!r}")
+
+
 def notifier_loop():
     seen = {}  # session_id -> (status, busy_since)
     while True:
@@ -485,6 +512,7 @@ def notifier_loop():
                 seen[sid] = (st, busy_since)
             for sid in set(seen) - {s["session_id"] for s in live}:
                 seen.pop(sid, None)
+            dismiss_seen(live)
         except Exception as e:
             nlog(f"ERRO no notificador: {e!r}")
 
