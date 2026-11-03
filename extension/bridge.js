@@ -115,15 +115,23 @@ class ClaudeWsIndicator extends PanelMenu.Button {
         this._refresh();
     }
 
+    // Transient: shown as a banner but never kept in the notification list.
+    _toast(text) {
+        const src = new MessageTray.Source({title: 'Claude Workspace', iconName: 'utilities-terminal'});
+        Main.messageTray.add(src);
+        src.addNotification(new MessageTray.Notification({source: src, title: 'Claude Workspace', body: text, isTransient: true}));
+        GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 30, () => { src.destroy(); return GLib.SOURCE_REMOVE; });
+    }
+
     async _do(path, body, toast = false) {
         try {
             const r = await this._api.post(path, body);
             if (r.error)
-                Main.notify('Claude Workspace', r.error);
+                this._toast(r.error);
             else if (toast && r.message)
-                Main.notify('Claude Workspace', r.message);
+                this._toast(r.message);
         } catch (e) {
-            Main.notify('Claude Workspace', `Servidor indisponível (${e.message})`);
+            this._toast(`Servidor indisponível (${e.message})`);
         }
         this._redraw();
     }
