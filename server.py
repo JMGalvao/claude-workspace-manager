@@ -91,13 +91,21 @@ def _cmdline(pid):
 
 
 def _flags_from(args):
-    """Launch flags of a running claude, minus resume/continue and its id."""
-    out, skip = [], False
+    """Launch flags of a running claude, minus resume/continue and its id, and minus the per-session ones
+    (-n/--name and --session-id carry a value that belongs to that one run: kept without it, -n would swallow --resume)."""
+    out, skip, skipval = [], False, False
     for x in args[1:]:
+        if skipval:
+            skipval = False
+            if not x.startswith("-"):
+                continue
         if skip:
             skip = False
             if UUID_RE.match(x):
                 continue
+        if x in ("-n", "--name", "--session-id", "-p", "--print") or x.startswith(("--name=", "--session-id=")):
+            skipval = x in ("-n", "--name", "--session-id")
+            continue
         if x in ("--resume", "-r", "--continue", "-c"):
             skip = x in ("--resume", "-r")
             continue
